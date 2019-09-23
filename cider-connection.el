@@ -704,6 +704,18 @@ Session name can be customized with `cider-session-name-template'."
   "Get REPL-BUFFER's type."
   (buffer-local-value 'cider-repl-type repl-buffer))
 
+(defvar-local cider-cljc-repl-type 'multi
+  "Which repl to send forms to in a cljc buffer.
+ Either 'clj, 'cljs or 'multi")
+
+(defun cider-direct-cljc ()
+  (interactive)
+  (if (derived-mode-p 'clojurec-mode)
+      (setq-local cider-cljc-repl-type
+                  (intern (completing-read "Direct CLJC input to:" '(clj cljs multi)
+                                           nil 'require-match)))
+    (user-error "Not applicable in %s" major-mode)))
+
 (defun cider-repl-type-for-buffer (&optional buffer)
   "Return the matching connection type (clj or cljs) for BUFFER.
 BUFFER defaults to the `current-buffer'.  In cljc buffers return
@@ -712,7 +724,7 @@ For the REPL type use the function `cider-repl-type'."
   (with-current-buffer (or buffer (current-buffer))
     (cond
      ((derived-mode-p 'clojurescript-mode) 'cljs)
-     ((derived-mode-p 'clojurec-mode) 'multi)
+     ((derived-mode-p 'clojurec-mode) cider-cljc-repl-type)
      ((derived-mode-p 'clojure-mode) 'clj)
      (cider-repl-type))))
 
