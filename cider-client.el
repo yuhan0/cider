@@ -547,16 +547,21 @@ Used only when the info nREPL middleware is not available."
          (var-info (nrepl-dict-from-hash (parseedn-read-str (nrepl-dict-get response "value")))))
     var-info))
 
-(defun cider-var-info (var &optional all)
+(defun cider-var-info (var &optional choice)
   "Return VAR's info as an alist with list cdrs.
-When multiple matching vars are returned you'll be prompted to select one,
-unless ALL is truthy."
+When multiple matching vars are returned, and CHOICE is the symbol `first',
+choose the first candidate var without prompting.
+If CHOICE is nil, you'll be prompted to select one.
+Otherwise, return all candidates in the response."
   (when (and var (not (string= var "")))
     (let ((var-info (cond
                      ((cider-nrepl-op-supported-p "info") (cider-sync-request:info var nil nil (cider-completion-get-context t)))
                      ((cider-nrepl-op-supported-p "lookup") (cider-sync-request:lookup var))
                      (t (cider-fallback-eval:info var)))))
-      (if all var-info (cider--var-choice var-info)))))
+      (or (and (eq 'first choice)
+               (let ((cands (nrepl-dict-get var-info "candidates")))
+                 (if cands (car (nrepl-dict-vals cands)))))
+          (if choice var-info (cider--var-choice var-info))))))
 
 (defun cider-member-info (class member)
   "Return the CLASS MEMBER's info as an alist with list cdrs."
