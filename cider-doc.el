@@ -407,6 +407,8 @@ Same for `jar:file:...!/' segments."
             file))
       result)))
 
+(declare-function cider-inspect-expr "cider-inspect")
+
 (defun cider-docview-render-info (buffer info &optional compact for-tooltip)
   "Emit into BUFFER formatted INFO for the Clojure or Java symbol,
 in a COMPACT format is specified, FOR-TOOLTIP if specified."
@@ -507,6 +509,12 @@ in a COMPACT format is specified, FOR-TOOLTIP if specified."
                                         (browse-url (button-get x 'url))))
           (insert ".\n"))
         (insert "\n")
+        (insert-text-button "[Inspect value]"
+                            'action (lambda (_) (cider-inspect-expr name ns)))
+        (insert " ")
+        (insert-text-button "[View Clojuredocs]"
+                            'action (lambda (_) (cider-docview-clojuredocs)))
+        (insert "\n\n")
         (when spec
           (emit "Spec:" 'font-lock-function-name-face)
           (insert (cider-browse-spec--pprint-indented spec))
