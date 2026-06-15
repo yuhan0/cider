@@ -415,9 +415,10 @@ PROPERTY should be a symbol of either 'text, 'ansi-context or
             (expect (cider--sesman-friendly-session-p (list "a-session" b))
                     :to-be-truthy)))))
 
-    (it "uses `file-in-directory-p' for classpath roots (no spurious prefix matches)"
-      ;; A classpath root of `<root>/foo' must NOT match a file under
-      ;; `<root>/foobar/' -- the bug that `string-prefix-p' had.
+    (it "does not spuriously match sibling directories under classpath roots"
+      ;; A classpath root of `<root>/foo/' must NOT match a file under
+      ;; `<root>/foobar/'.  The trailing slash on the root makes
+      ;; `string-prefix-p' safe here; roots are canonicalized at precompute time.
       (with-repl-buffer "a-session" 'clj b
         (let ((roots (list (concat fake-proj-root "foo/"))))
           (spy-on 'get-buffer-process :and-return-value 'fake-proc)

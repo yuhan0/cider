@@ -1890,7 +1890,10 @@ caches are stored on the connection's process under:
 
 * `:cached-classpath' -- full classpath entries.
 * `:cached-classpath-roots' -- directory roots derived from the
-  classpath (non-JAR entries, deduplicated).
+  classpath (non-JAR entries, deduplicated, resolved via
+  `file-truename' so the matcher can use `string-prefix-p').
+* `:cached-project-dir' -- `nrepl-project-dir' resolved via
+  `file-truename', or nil when no project dir is set.
 * `:all-namespaces' -- a snapshot of the namespace list at connect
   time, used as a fallback for ns-based matching when
   `cider-repl-ns-cache' is empty.
@@ -1905,7 +1908,11 @@ to the project-dir / ns-form fallbacks in the matcher."
                                 (seq-remove (lambda (path) (string-suffix-p ".jar" path)))
                                 (mapcar #'file-name-directory)
                                 (delq nil)
-                                (seq-uniq))))
+                                (mapcar (lambda (p) (file-name-as-directory (file-truename p))))
+                                (seq-uniq)))
+      (process-put proc :cached-project-dir
+                   (when nrepl-project-dir
+                     (file-name-as-directory (file-truename nrepl-project-dir)))))
     (when (cider-nrepl-op-supported-p "cider/ns-list")
       (process-put proc :all-namespaces
                    (ignore-errors (cider-sync-request:ns-list))))))
@@ -1965,15 +1972,20 @@ avoids blocking on classpath/ns-list fetches."
           (let ((classpath (process-get proc :cached-classpath))
                 (classpath-roots (process-get proc :cached-classpath-roots))
                 (ns-list (process-get proc :all-namespaces))
-                (proj-dir (buffer-local-value 'nrepl-project-dir repl)))
+                ;; Prefer the truename cached at connect time; fall back for
+                ;; connections that predate :cached-project-dir.
+                (proj-dir (or (process-get proc :cached-project-dir)
+                              (when-let ((d (buffer-local-value 'nrepl-project-dir repl)))
+                                (file-name-as-directory (file-truename d))))))
             ;; Classpath entries can be JAR files (matched as path prefixes of
-            ;; archive-internal paths); roots are real directories and need a
-            ;; proper directory-boundary check.
+            ;; archive-internal paths); roots are real directories whose
+            ;; truenames were resolved once at connect time, so plain
+            ;; string-prefix-p suffices here and in the translated-path branch.
             (or (seq-find (lambda (path) (string-prefix-p path file))
                           classpath)
-                (seq-find (lambda (path) (file-in-directory-p file path))
+                (seq-find (lambda (path) (string-prefix-p path file))
                           classpath-roots)
-                (and proj-dir (file-in-directory-p file proj-dir))
+                (and proj-dir (string-prefix-p proj-dir file))
                 (when-let* ((cider-path-translations (cider--all-path-translations))
                             (translated (cider--translate-path file 'to-nrepl :return-all)))
                   (seq-find (lambda (translated-path)
@@ -1981,7 +1993,7 @@ avoids blocking on classpath/ns-list fetches."
                                               (string-prefix-p path translated-path))
                                             classpath)
                                   (seq-find (lambda (path)
-                                              (file-in-directory-p translated-path path))
+                                              (string-prefix-p path translated-path))
                                             classpath-roots)))
                             translated))
                 (when-let ((ns (condition-case nil
