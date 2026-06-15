@@ -536,6 +536,33 @@ Returns a list of the form ((session1 host1) (session2 host2) ...)."
               sessions
               '()))
 
+(defvar cider--session-generation 0
+  "Global counter incremented on every CIDER connect/disconnect event.
+Buffer-local caches in `cider-repls' compare against this value; a
+mismatch triggers a re-scan.  Using a generation avoids iterating all
+buffers on each topology change and correctly caches nil (no sessions)
+without confusing \"cache not populated\" with \"no REPL found\".")
+
+(defvar-local cider--cached-repls nil
+  "Buffer-local cache for `cider-repls'.")
+
+(defvar-local cider--cached-repls-generation -1
+  "Value of `cider--session-generation' when `cider--cached-repls' was last set.
+Initialized to -1 so every buffer triggers one scan before caching.")
+
+(defun cider--bump-session-generation ()
+  "Invalidate all buffer REPL caches by advancing the generation counter."
+  (cl-incf cider--session-generation))
+
+(defun cider--reset-cached-repls ()
+  "Invalidate all buffer-local caches for `cider-repls'.
+Interactively useful after manually modifying sesman session state."
+  (interactive)
+  (cider--bump-session-generation))
+
+(add-hook 'cider-connected-hook #'cider--bump-session-generation)
+(add-hook 'cider-disconnected-hook #'cider--bump-session-generation)
+
 ;; Avoid circular dependency: cider-client.el requires cider-session.el
 (declare-function cider-nrepl-op-supported-p "cider-client")
 (defun cider-repls (&optional type ensure required-ops)
@@ -553,24 +580,29 @@ filters out all the REPLs that do not support the designated ops."
                        (cdr session)
                      (message "Default CIDER session '%s' no longer exists, ignoring" cider-default-session)
                      nil)
-                 (pcase cider-merge-sessions
-                   ('host
-                    (if ensure
-                        (or (cider--extract-connections (cider--get-sessions-with-same-host
-                                                         (sesman-current-session 'CIDER)
-                                                         (sesman-current-sessions 'CIDER)))
-                            (user-error "No linked %s sessions" 'CIDER))
-                      (cider--extract-connections (cider--get-sessions-with-same-host
-                                                   (sesman-current-session 'CIDER)
-                                                   (sesman-current-sessions 'CIDER)))))
-                   ('project
-                    (if ensure
-                        (or (cider--extract-connections (sesman-current-sessions 'CIDER))
-                            (user-error "No linked %s sessions" 'CIDER))
-                      (cider--extract-connections (sesman-current-sessions 'CIDER))))
-                   (_ (cdr (if ensure
-                               (sesman-ensure-session 'CIDER)
-                             (sesman-current-session 'CIDER))))))))
+                 (if (= cider--cached-repls-generation cider--session-generation)
+                     cider--cached-repls
+                   (setq-local cider--cached-repls-generation cider--session-generation)
+                   (setq-local
+                    cider--cached-repls
+                    (pcase cider-merge-sessions
+                      ('host
+                       (if ensure
+                           (or (cider--extract-connections (cider--get-sessions-with-same-host
+                                                            (sesman-current-session 'CIDER)
+                                                            (sesman-current-sessions 'CIDER)))
+                               (user-error "No linked %s sessions" 'CIDER))
+                         (cider--extract-connections (cider--get-sessions-with-same-host
+                                                      (sesman-current-session 'CIDER)
+                                                      (sesman-current-sessions 'CIDER)))))
+                      ('project
+                       (if ensure
+                           (or (cider--extract-connections (sesman-current-sessions 'CIDER))
+                               (user-error "No linked %s sessions" 'CIDER))
+                         (cider--extract-connections (sesman-current-sessions 'CIDER))))
+                      (_ (cdr (if ensure
+                                  (sesman-ensure-session 'CIDER)
+                                (sesman-current-session 'CIDER))))))))))
     (or (seq-filter (lambda (b)
                       (unless
                           (cider-cljs-pending-p b)
